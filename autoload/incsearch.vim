@@ -26,6 +26,7 @@
 " @vimlint(EVL103, 1, a:cmdline)
 " @vimlint(EVL102, 1, v:errmsg)
 " @vimlint(EVL102, 1, v:warningmsg)
+" @vimlint(EVL102, 1, v:searchforward)
 "=============================================================================
 scriptencoding utf-8
 " Saving 'cpoptions' {{{
@@ -37,11 +38,19 @@ let s:TRUE = !0
 let s:FALSE = 0
 let s:DIRECTION = { 'forward': 1, 'backward': 0 } " see :h v:searchforward
 
+" based on: https://github.com/deris/vim-magicalize/blob/433e38c1e83b1bdea4f83ab99dc19d070932380c/autoload/magicalize.vim#L52-L53
+" improve to work with repetitive espaced slash like \V\V
+" NOTE: \@1<= doesn't work to detect \v\v\v\v
+let s:escaped_backslash     = '\m\%(^\|[^\\]\)\%(\\\\\)*'
+let s:non_escaped_backslash = '\m\%(\%(^\|[^\\]\)\%(\\\\\)*\)\@<=\\'
+
 " Option:
 let g:incsearch#emacs_like_keymap      = get(g: , 'incsearch#emacs_like_keymap'      , s:FALSE)
 let g:incsearch#highlight              = get(g: , 'incsearch#highlight'              , {})
 let g:incsearch#separate_highlight     = get(g: , 'incsearch#separate_highlight'     , s:FALSE)
 let g:incsearch#consistent_n_direction = get(g: , 'incsearch#consistent_n_direction' , s:FALSE)
+let g:incsearch#vim_cmdline_keymap     = get(g: , 'incsearch#vim_cmdline_keymap'     , s:TRUE)
+let g:incsearch#smart_backward_word    = get(g: , 'incsearch#smart_backward_word'    , s:TRUE)
 " This changes error and warning emulation way slightly
 let g:incsearch#do_not_save_error_message_history =
 \   get(g:, 'incsearch#do_not_save_error_message_history', s:FALSE)
@@ -69,8 +78,23 @@ call s:cli.connect('CursorMove')
 call s:cli.connect('Delete')
 call s:cli.connect('DrawCommandline')
 call s:cli.connect('ExceptionExit')
-call s:cli.connect('Exit')
-call s:cli.connect('InsertRegister')
+" NOTE: see s:cli.keymapping()
+" call s:cli.connect('Exit')
+let s:incsearch_exit = {
+\   "name" : "IncsearchExit",
+\   "exit_code" : 0
+\}
+function! s:incsearch_exit.on_char_pre(cmdline)
+    if   a:cmdline.is_input("\<CR>")
+    \ || a:cmdline.is_input("\<NL>")
+        call a:cmdline.setchar("")
+        call a:cmdline.exit(self.exit_code)
+    endif
+endfunction
+call s:cli.connect(s:incsearch_exit)
+
+let s:InsertRegister = s:modules.get('InsertRegister').make()
+call s:cli.connect(s:InsertRegister)
 call s:cli.connect('Paste')
 " XXX: better handling.
 if expand("%:p") !=# expand("<sfile>:p")
@@ -79,18 +103,63 @@ endif
 call s:cli.connect(s:modules.get('ExceptionMessage').make('incsearch.vim: ', 'echom'))
 call s:cli.connect(s:modules.get('History').make('/'))
 call s:cli.connect(s:modules.get('NoInsert').make_special_chars())
-if g:incsearch#emacs_like_keymap
-    call s:cli.connect(s:modules.get('KeyMapping').make_emacs())
-endif
+
+" Dynamic Module Loading Management
+let s:KeyMapping = s:modules.get('KeyMapping')
+let s:emacs_like = s:KeyMapping.make_emacs()
+let s:vim_cmap = s:KeyMapping.make_vim_cmdline_mapping()
+let s:smartbackword = s:modules.get('IgnoreRegexpBackwardWord').make()
+function! s:emacs_like.__condition()
+    return g:incsearch#emacs_like_keymap
+endfunction
+function! s:vim_cmap.__condition()
+    return g:incsearch#vim_cmdline_keymap
+endfunction
+function! s:smartbackword.__condition()
+    return g:incsearch#smart_backward_word
+endfunction
+let s:module_management =  {
+\   'name' : 'IncsearchModuleManagement',
+\   'modules' : [
+\       s:emacs_like, s:vim_cmap, s:smartbackword
+\   ]
+\}
+let s:backward_word = s:cli.backward_word
+function! s:module_management.on_enter(cmdline)
+    for module in self.modules
+        if has_key(module, '__condition') && ! module.__condition()
+            call a:cmdline.disconnect(module.name)
+            if module.name ==# 'IgnoreRegexpBackwardWord'
+                function! a:cmdline.backward_word(...)
+                    return call(s:backward_word, a:000, self)
+                endfunction
+            endif
+        elseif empty(a:cmdline.get_module(module.name))
+            call a:cmdline.connect(module)
+            if has_key(module, 'on_enter')
+                call module.on_enter(a:cmdline)
+            endif
+        endif
+    endfor
+endfunction
+function! s:module_management.priority(event)
+    " NOTE: to overwrite backward_word() with default function
+    return a:event ==# 'on_enter' ? 5 : 0
+endfunction
+call s:cli.connect(s:module_management)
+unlet s:KeyMapping s:emacs_like s:vim_cmap s:smartbackword s:incsearch_exit
 
 
 function! s:cli.keymapping()
+    " NOTE:
+    " 'lock' doesn't be remapped if it is in the multi {rhs} mapping
+    " workaround: use s:incsearch_exit module and do not use `lock` fetaure
+    " \       "\<CR>"   : {
+    " \           "key" : "<Over>(exit)",
+    " \           "noremap" : 1,
+    " \           "lock" : 1,
+    " \       },
     return extend({
-\       "\<CR>"   : {
-\           "key" : "<Over>(exit)",
-\           "noremap" : 1,
-\           "lock" : 1,
-\       },
 \       "\<Tab>"   : {
 \           "key" : "<Over>(incsearch-next)",
 \           "noremap" : 1,
@@ -117,6 +186,13 @@ endfunction
 let s:inc = {
 \   "name" : "incsearch",
 \}
+
+
+function! s:inc.backward_word(...)
+    let expr = self.backward()
+    " expr から 要らない正規表現フラッグ取り除く
+    return call(function('s:cli.backward_word'), [expr], self)
+endfunction
 
 function! s:inc.on_enter(cmdline)
     nohlsearch " disable previous highlight
@@ -149,6 +225,13 @@ function! s:inc.on_leave(cmdline)
     else
         echo s:cli.get_prompt() . s:cli.getline()
     endif
+    " NOTE:
+    "   push rest of keymappings with feedkeys()
+    "   FIXME: assume 'noremap' but it should take care wheter or not the
+    "   mappings should be remapped or not
+    if a:cmdline.input_key_stack_string() != ''
+        call feedkeys(a:cmdline.input_key_stack_string(), 'n')
+    endif
 endfunction
 
 function! s:reset()
@@ -168,6 +251,7 @@ function! s:on_searching(func, ...)
     catch /E55:/
     catch /E66:/  " E66: \z( not allowed here
     catch /E67:/  " E67: \z1 et al. not allowed here
+    catch /E68:/  " E68: Invalid character after \z (with /\za & re=1)
     catch /E69:/  " E69: Missing ] after \%[
     catch /E70:/  " E70: Empty \%[]
     catch /E554:/
@@ -197,7 +281,8 @@ function! s:on_char_pre(cmdline)
     \ || a:cmdline.is_input("<Over>(incsearch-prev)")
     \ ) && empty(pattern)
         call a:cmdline.setchar('')
-        call a:cmdline.setline(@/ . s:cli.base_key . offset)
+        " Use history instead of @/ to work with magic option and converter
+        call a:cmdline.setline(histget('/', -1) . (empty(offset) ? '' : s:cli.base_key) . offset)
         " Just insert last-pattern and do not count up, but the incsearch-prev
         " should move the cursor to reversed directly, so do not return if the
         " command is prev
@@ -277,6 +362,17 @@ function! s:on_char(cmdline)
         return
     endif
 
+    " For InsertRegister
+    if a:cmdline.get_tap_key() ==# "\<C-r>"
+        let p = a:cmdline.getpos()
+        " Remove `"`
+        let raw_pattern = raw_pattern[:p-1] . raw_pattern[p+1:]
+        let w = winsaveview()
+        call cursor(line('.'), col('.') + len(raw_pattern))
+        call s:InsertRegister.reset()
+        call winrestview(w)
+    endif
+
     let pattern = s:convert(raw_pattern)
 
     " Improved Incremental cursor move!
@@ -347,7 +443,7 @@ call s:cli.connect(s:inc)
 "}}}
 
 " Main: {{{
-" TODO: make publick API to which you can pass `context` (or option)
+" TODO: make public API to which you can pass `context` (or option)
 " @expr: called by <expr> mappings
 
 function! incsearch#forward(mode, ...)
@@ -413,7 +509,10 @@ function! incsearch#stay_expr(...)
         " NOTE: do not move cursor but need to handle {offset} for n & N ...! {{{
         " FIXME: cannot set {offset} if in operator-pending mode because this
         " have to use feedkeys()
-        if !empty(offset) && mode(1) !=# 'no'
+        let is_cancel = s:cli.exit_code()
+        if is_cancel
+            " do nothing
+        elseif !empty(offset) && mode(1) !=# 'no'
             let cmd = s:with_ignore_foldopen(
             \   function('s:generate_command'), m, input, '/')
             call feedkeys(cmd, 'n')
@@ -498,7 +597,12 @@ function! s:set_search_related_stuff(cmd, ...)
     " For stay motion
     let should_set_jumplist = get(a:, 1, s:TRUE)
     let is_cancel = s:cli.exit_code()
-    if is_cancel | return | endif
+    if is_cancel
+        " Restore cursor position and return
+        " NOTE: Should I request on_cancel event to vital-over and use it?
+        call winrestview(s:w)
+        return
+    endif
     let [raw_pattern, offset] = s:cli_parse_pattern()
     let should_execute = !empty(offset) || empty(raw_pattern)
     if should_execute
@@ -580,10 +684,13 @@ function! incsearch#auto_nohlsearch(nest)
     \     '
     " NOTE: :h autocmd-searchpat
     "   You cannot implement this feature without feedkeys() bacause of
-    "   :h autocmd-searchpat , so there are some events which we cannot fire
-    "   like :h InsertEnter
+    "   :h autocmd-searchpat
     augroup incsearch-auto-nohlsearch
         autocmd!
+        " NOTE: this break . unit with c{text-object}
+        " side-effect: InsertLeave & InsertEnter are called with i_CTRL-\_CTRL-O
+        " autocmd InsertEnter * call feedkeys("\<C-\>\<C-o>:nohlsearch\<CR>", "n")
+        " \   | autocmd! incsearch-auto-nohlsearch
         execute join([
         \   'autocmd CursorMoved *'
         \ , repeat('autocmd incsearch-auto-nohlsearch CursorMoved * ', a:nest)
@@ -619,7 +726,15 @@ endfunction
 
 " CommandLine Interface parse pattern wrapper
 function! s:cli_parse_pattern()
-    return incsearch#parse_pattern(s:cli.getline(), s:cli.base_key)
+    if v:version == 704 && !has('patch421')
+        " Ignore \ze* which clash vim 7.4 without 421 patch
+        " Assume `\m`
+        let [p, o] = incsearch#parse_pattern(s:cli.getline(), s:cli.base_key)
+        let p = (p =~# s:non_escaped_backslash . 'z[se]\%(\*\|\\+\)' ? '' : p)
+        return [p, o]
+    else
+        return incsearch#parse_pattern(s:cli.getline(), s:cli.base_key)
+    endif
 endfunction
 
 " CommandLine Interface parse pattern wrapper for just getting pattern
@@ -637,15 +752,6 @@ function! s:convert(pattern)
     return s:magic() . a:pattern
 endfunction
 
-" based on: https://github.com/deris/vim-magicalize/blob/433e38c1e83b1bdea4f83ab99dc19d070932380c/autoload/magicalize.vim#L52-L53
-" improve to work with repetitive espaced slash like \V\V
-" XXX: Maybe it should use \@1<= ( :h /\@<= ) but this doesn't work in old vim
-" and i cannot find the version which this regex is introduced. It handle
-" repetitive escaped backslash like `\V\V` unlike `\zs`, so it cannot avoid
-" using \@<=
-let s:escaped_backslash     = '\m\%(^\|[^\\]\)\%(\\\\\)*'
-" let s:non_escaped_backslash = '\m\%(\%(^\|[^\\]\)\%(\\\\\)*\)\@1<=\\'
-let s:non_escaped_backslash = '\m\%(\%(^\|[^\\]\)\%(\\\\\)*\)\@<=\\'
 function! incsearch#detect_case(pattern)
     " Ignore \%C, \%U, \%V for smartcase detection
     let p = substitute(a:pattern, s:non_escaped_backslash . '%[CUV]', '', 'g')
@@ -764,13 +870,30 @@ function! s:with_ignore_foldopen(F, ...)
 endfunction
 
 " Try to avoid side-effect as much as possible except cursor movement
-let s:keeppattern = (v:version > 704 || v:version == 704 && has('patch083') ? 'keeppattern' : '')
-function! s:execute_search(cmd)
+let s:has_keeppattern = v:version > 704 || v:version == 704 && has('patch083')
+let s:keeppattern = (s:has_keeppattern ? 'keeppattern' : '')
+function! s:_execute_search(cmd)
     " :nohlsearch
     "   Please do not highlight at the first place if you set back
     "   info! I'll handle it myself :h function-search-undo
     execute s:keeppattern 'keepjumps' 'normal!' a:cmd | nohlsearch
 endfunction
+if s:has_keeppattern
+    function! s:execute_search(...)
+        return call(function('s:_execute_search'), a:000)
+    endfunction
+else
+    function! s:execute_search(...)
+        " keeppattern emulation
+        let p = @/
+        let r = call(function('s:_execute_search'), a:000)
+        " NOTE: `let @/ = p` reset v:searchforward
+        let d = v:searchforward
+        let @/ = p
+        let v:searchforward = d
+        return r
+    endfunction
+endif
 
 function! s:magic()
     let m = g:incsearch#magic
