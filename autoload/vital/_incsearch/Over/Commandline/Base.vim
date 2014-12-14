@@ -8,11 +8,14 @@ function! s:_vital_loaded(V)
 	let s:String  = s:V.import("Over.String")
 	let s:Signals = s:V.import("Over.Signals")
 	let s:Input = s:V.import("Over.Input")
+	let s:Keymapping = s:V.import("Over.Keymapping")
 	let s:Module = s:V.import("Over.Commandline.Modules")
 	let s:base.variables.modules = s:Signals.make()
 	function! s:base.variables.modules.get_slot(val)
 		return a:val.slot.module
 	endfunction
+
+	let s:Highlight = s:V.import("Palette.Highlight")
 endfunction
 
 
@@ -21,7 +24,9 @@ function! s:_vital_depends()
 \		"Over.String",
 \		"Over.Signals",
 \		"Over.Input",
+\		"Over.Keymapping",
 \		"Over.Commandline.Modules",
+\		"Palette.Highlight",
 \	]
 endfunction
 
@@ -219,10 +224,9 @@ endfunction
 
 
 function! s:base.cnoremap(lhs, rhs)
-	let self.variables.keymapping[a:lhs] = {
-\		"key"     : a:rhs,
-\		"noremap" : 1,
-\	}
+	let key = s:Keymapping.as_key_config(a:rhs)
+	let key.noremap = 1
+	let self.variables.keymapping[a:lhs] = key
 endfunction
 
 
@@ -320,7 +324,7 @@ function! s:base.get(...)
 	let Old_execute = self.execute
 	let self.execute = self.__empty
 	try
-		let exit_code = self.start()
+		let exit_code = call(self.start, a:000, self)
 		if exit_code == 0
 			return self.getline()
 		endif
@@ -359,11 +363,34 @@ function! s:base._init_variables()
 endfunction
 
 
+function! s:_is_valid_highlight(name)
+	let highlight = s:Highlight.get(a:name)
+	if empty(highlight)
+		return 0
+	endif
+
+	if has("gui_running")
+\	&& (has_key(highlight, "guifg") || has_key(highlight, "guibg"))
+		return 1
+	elseif (has_key(highlight, "ctermfg") || has_key(highlight, "ctermbg"))
+		return 1
+	endif
+	return 0
+endfunction
+
+
 function! s:base._init()
 	call self._init_variables()
 	call self.hl_cursor_off()
 	if !hlexists(self.highlights.cursor)
-		execute "highlight link " . self.highlights.cursor . " Cursor"
+		if s:_is_valid_highlight("Cursor")
+			execute "highlight link " . self.highlights.cursor . " Cursor"
+		else
+			" Workaround by CUI Vim Cursor Highlight
+			" issues #92
+			" https://github.com/osyo-manga/vital-over/issues/92
+			execute "highlight " . self.highlights.cursor . " term=reverse cterm=reverse gui=reverse"
+		endif
 	endif
 	if !hlexists(self.highlights.cursor_on)
 		execute "highlight link " . self.highlights.cursor_on . " " . self.highlights.cursor
@@ -401,9 +428,18 @@ endfunction
 
 
 function! s:base._input(input, ...)
+	if a:input == ""
+		return
+	endif
+
 	let self.variables.input_key = a:input
+	if a:0 == 0
+		let keymapping = self._get_keymapping()
+	else
+		let keymapping = a:1
+	endif
 	if self.is_enable_keymapping()
-		let key = s:_unmap(self._get_keymapping(), a:input)
+		let key = s:Keymapping.unmapping(keymapping, a:input)
 	else
 		let key = a:input
 	endif
@@ -418,6 +454,40 @@ function! s:base._input(input, ...)
 endfunction
 
 
+function! s:is_input_waiting(keymapping, input)
+	let num = len(filter(copy(a:keymapping), 'stridx(v:key, a:input) == 0'))
+	return num > 1 || (num == 1 && !has_key(a:keymapping, a:input))
+endfunction
+
+
+function! s:base._inputting()
+	if !self.is_enable_keymapping()
+		return self._input(s:Input.getchar())
+	endif
+
+	let input = s:Input.getchar()
+	let old_line = self.getline()
+	let old_pos  = self.getpos()
+	let old_forward = self.forward()
+	let old_backward = self.backward()
+	let keymapping = self._get_keymapping()
+	try
+		let t = reltime()
+		while s:is_input_waiting(keymapping, input)
+\		&& str2nr(reltimestr(reltime(t))) * 1000 < &timeoutlen
+			call self.setline(old_backward . input . old_forward)
+			call self.setpos(old_pos)
+			call self.draw()
+			let input .= s:Input.getchar(0)
+		endwhile
+	finally
+		call self.setline(old_line)
+		call self.setpos(old_pos)
+	endtry
+	call self._input(input, keymapping)
+endfunction
+
+
 function! s:base._update()
 " 	call self.callevent("on_update")
 " 	if !getchar(1)
@@ -428,7 +498,8 @@ function! s:base._update()
 " 	call self.draw()
 
 	call self.callevent("on_update")
-	call self._input(s:Input.getchar())
+	call self._inputting()
+" 	call self._input(s:Input.getchar())
 	if self._is_exit()
 		return -1
 	endif
@@ -470,35 +541,6 @@ endfunction
 
 function! s:base._is_exit()
 	return self.variables.exit
-endfunction
-
-
-function! s:_as_key_config(config)
-	let base = {
-\		"noremap" : 0,
-\		"lock"    : 0,
-\	}
-	return type(a:config) == type({}) ? extend(base, a:config)
-\		 : extend(base, {
-\		 	"key" : a:config,
-\		 })
-endfunction
-
-
-function! s:_unmap(mapping, key)
-	let keys = s:String.split_by_keys(a:key)
-	if len(keys) > 1
-		return join(map(keys, 's:_unmap(a:mapping, v:val)'), '')
-	endif
-	if !has_key(a:mapping, a:key)
-		return a:key
-	endif
-	let rhs  = s:_as_key_config(a:mapping[a:key])
-	let next = s:_as_key_config(get(a:mapping, rhs.key, {}))
-	if rhs.noremap && next.lock == 0
-		return rhs.key
-	endif
-	return s:_unmap(a:mapping, rhs.key)
 endfunction
 
 

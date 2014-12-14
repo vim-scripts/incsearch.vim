@@ -1,7 +1,7 @@
 *incsearch.txt*	Incrementally highlight all pattern matches
 
 Author  : haya14busa <hayabusa1419@gmail.com>
-Version : 0.9.9
+Version : 1.0.0
 License : MIT license {{{
 
 	Copyright (c) 2014 haya14busa
@@ -97,6 +97,7 @@ Additional usage~
 
 						*g:incsearch#auto_nohlsearch*
 <Plug>(incsearch-nohl)				*<Plug>(incsearch-nohl)*
+<Plug>(incsearch-nohl0)				*<Plug>(incsearch-nohl0)*
 <Plug>(incsearch-nohl-n)			*<Plug>(incsearch-nohl-n)*
 <Plug>(incsearch-nohl-N)			*<Plug>(incsearch-nohl-N)*
 <Plug>(incsearch-nohl-*)			*<Plug>(incsearch-nohl-star)*
@@ -125,13 +126,29 @@ Additional usage~
 	behavior is completely same as default one.
 
 	If you want to use this feature with other search related plugins, use
-	|<Plug>(incsearch-nohl)|. Please make sure to place |<Plug>(incsearch-nohl)|
-	before the cursor moving mappings.
+	|<Plug>(incsearch-nohl)|.
+	Please make sure to place |<Plug>(incsearch-nohl)| before the cursor
+	moving mappings. |<Plug>(incsearch-nohl0)| handles search enhancement
+	mappings without |CursorMoved| event.
 
 	Working with |anzu.txt| example:
+	    https://github.com/osyo-manga/vim-anzu
 >
 	    map n <Plug>(incsearch-nohl)<Plug>(anzu-n-with-echo)
 	    map N <Plug>(incsearch-nohl)<Plug>(anzu-N-with-echo)
+<
+	Working with |asterisk.txt| example:
+	    https://github.com/haya14busa/vim-asterisk
+>
+	    map *   <Plug>(incsearch-nohl)<Plug>(asterisk-*)
+	    map g*  <Plug>(incsearch-nohl)<Plug>(asterisk-g*)
+	    map #   <Plug>(incsearch-nohl)<Plug>(asterisk-#)
+	    map g#  <Plug>(incsearch-nohl)<Plug>(asterisk-g#)
+
+	    map z*  <Plug>(incsearch-nohl0)<Plug>(asterisk-z*)
+	    map gz* <Plug>(incsearch-nohl0)<Plug>(asterisk-gz*)
+	    map z#  <Plug>(incsearch-nohl0)<Plug>(asterisk-z#)
+	    map gz# <Plug>(incsearch-nohl0)<Plug>(asterisk-gz#)
 <
 
 					    *g:incsearch#consistent_n_direction*
@@ -194,7 +211,7 @@ Smart backward word~
 Command line interface~
 					*incsearch-commandline-interface*
 
-:IncSearchNoreMap {lhs} {rhs}				*IncSearchNoreMap*
+:IncSearchNoreMap {lhs} {rhs}				*:IncSearchNoreMap*
 
 	Map the key sequence {lhs} to {rhs} for the |incsearch.vim| command
 	line interface. This command doesn't load while loading your vimrc,
@@ -219,6 +236,10 @@ Command line interface~
 				    default: <C-j>
 	<Over>(incsearch-scroll-b) : scroll to the previous page match.
 				    default: <C-k>
+		NOTE: if you want to use |digraphs| feature, please overwrite
+		<C-k> or map another key to <C-k> like this. >
+		    IncSearchNoreMap <C-k> <C-k>
+<
 
 	Example:
 >
@@ -235,7 +256,9 @@ Command line interface~
 <
 						*g:incsearch#vim_cmdline_keymap*
 	Apply vim default |:cnoremap| and |:cmap| mappings to custom command line
-	interface of |incsearch.vim|. default: 1
+	interface of |incsearch.vim|. |:IncSearchNoreMap| has higher priority
+	than :cnoremap and :cmap mappings
+	    default: 1
 
 						*g:incsearch#emacs_like_keymap*
 	It enables Emacs-like keymappings if you set
@@ -255,11 +278,17 @@ Command line interface~
 		<A-d>  | |<C-w>|
 
 Buffer completion			*incsearch-<Over>(buffer-complete)*
+					*incsearch-<Over>(buffer-complete-prev)*
 	Completion with the buffer text.
 
-	<Over>(buffer-complete)  start buffer text completion. default: <C-l>
-	<Right>			 select next candidate while completion
-	<Left>			 select candidate while completion
+	<Over>(buffer-complete)
+	    start buffer text completion. default: <C-l>
+	<Over>(buffer-complete-prev)
+	    start buffer text completion to backward direction.
+	<Right>
+	    select next candidate while completion
+	<Left>
+	    select candidate while completion
 
 	Example: >
 		augroup incsearch-keymap
@@ -268,6 +297,7 @@ Buffer completion			*incsearch-<Over>(buffer-complete)*
 		augroup END
 		function! s:incsearch_keymap()
 		    IncSearchNoreMap <Tab> <Over>(buffer-complete)
+		    IncSearchNoreMap <S-Tab> <Over>(buffer-complete-prev)
 		endfunction
 <
 ------------------------------------------------------------------------------
@@ -323,6 +353,18 @@ Customize highlight ~
 		\   }
 		\ }
 <
+
+						*g:incsearch#no_inc_hlsearch*
+	Use 'hlsearch' incrementally to highlight matched patterns including
+	patterns in the other windows. The highlight of |IncSearchMatch| have
+	higher priority than 'hlsearch' in the current window but it doesn't
+	applied to other windows right now. If you do not want to highlight
+	with 'hlsearch', turn on this variable. >
+
+	    let g:incsearch#no_inc_hlsearch = 1
+
+<	default: 0
+
 ------------------------------------------------------------------------------
 AUTOCMD ~
 							    *incsearch-autocmd*
@@ -333,13 +375,13 @@ Name			triggered by ~
 IncSearchEnter		triggered when you enter the command line
 IncSearchLeave		triggered when you leave the command line
 IncSearchExecutePre	triggered before a command execution
+IncSearchExecute	triggered after a command execution
 IncSearchCharPre	triggered before every character insertion
 IncSearchChar		triggered after every character insertion
-IncSearchCancel		triggered when you exit without running the line
 
 NOTE:
-	incsearch.vim uses |:map-<expr>| for visual and operator-pending
-	mappings, so the same restriction apply to your defined autocmd.
+	incsearch.vim uses |:map-<expr>| for operator-pending mappings, so the
+	same restriction apply to your defined autocmd for operator-pending.
 
 ==============================================================================
 KNOWN ISSUES						*incsearch-issues*
@@ -357,11 +399,22 @@ Version 2.0(?) Roadmap~
 	    - Implement fuzzy-search, migemo, spellcheck and other feature
 	    - Make public pattern converter API for customization
 	    - Write test for converer feature
-
-Version 1.0 Roadmap~
-1.0.0	1. More stable, compatible with default |/| behavior
-	2. More configurable options
+	3. More configurable options
 	    - e.g. option for prompt format including right prompt feature
+
+Version 1.0~
+
+1.0.0	2014-12-14
+	1. Improve compatibility with default commandline behavior
+	    - Automatically apply mappings defined with |:cnoremap| and |:cmap|
+	      See |g:incsearch#vim_cmdline_keymap|
+	    - Support multi {lhs} and <expr> mappings
+	2. Support incremental highlighting in other windows.
+	    - See |g:incsearch#no_inc_hlsearch|
+	3. Add |<Over>(buffer-complete-prev)|
+	4. Add |IncsearchExecute| event
+	5. Implement |:digraph| feature
+	6. Fix minor problems.
 
 0.9.9	2014-11-17
 	1. Smart backward word feature. See: |g:incsearch#smart_backward_word|

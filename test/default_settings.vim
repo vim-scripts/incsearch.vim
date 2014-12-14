@@ -17,6 +17,7 @@ function! s:suite.config()
     call s:assert.equals(g:incsearch#do_not_save_error_message_history, 0)
     call s:assert.equals(g:incsearch#auto_nohlsearch, 0)
     call s:assert.equals(g:incsearch#magic, '')
+    call s:assert.equals(g:incsearch#no_inc_hlsearch, 0)
 endfunction
 
 function! s:suite.mappings()
@@ -29,6 +30,7 @@ function! s:suite.mappings()
     call s:assert.equals(maparg('<Plug>(incsearch-stay)', 'o'), 'incsearch#stay_expr()')
     " Additional:
     call s:assert.equals(maparg('<Plug>(incsearch-nohl)', 'nvo'), 'incsearch#auto_nohlsearch(1)')
+    call s:assert.equals(maparg('<Plug>(incsearch-nohl0)', 'nvo'), 'incsearch#auto_nohlsearch(0)')
     call s:assert.equals(maparg('<Plug>(incsearch-nohl-n)' , 'nvo'), '<Plug>(incsearch-nohl)<Plug>(_incsearch-n)')
     call s:assert.equals(maparg('<Plug>(incsearch-nohl-N)' , 'nvo'), '<Plug>(incsearch-nohl)<Plug>(_incsearch-N)')
     call s:assert.equals(maparg('<Plug>(incsearch-nohl-*)' , 'nvo'), '<Plug>(incsearch-nohl)<Plug>(_incsearch-*)')
@@ -70,7 +72,6 @@ function! s:suite.test_autoload_function()
     call s:assert.exists('*incsearch#backward')
     call s:assert.exists('*incsearch#stay')
     call s:assert.exists('*incsearch#parse_pattern')
-    call s:assert.exists('*incsearch#convert_with_case')
 endfunction
 
 function! s:suite.is_duplicate_helptags()

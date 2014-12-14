@@ -2,8 +2,12 @@ incsearch.vim: Improved incremental searching
 =============================================
 [![Build Status](https://travis-ci.org/haya14busa/incsearch.vim.svg?branch=master)](https://travis-ci.org/haya14busa/incsearch.vim)
 [![Build status](https://ci.appveyor.com/api/projects/status/ks6gtsu46c1djoo6/branch/master)](https://ci.appveyor.com/project/haya14busa/incsearch-vim/branch/master)
+[![](http://img.shields.io/github/tag/haya14busa/incsearch.vim.svg)](https://github.com/haya14busa/incsearch.vim/releases)
+[![](http://img.shields.io/github/issues/haya14busa/incsearch.vim.svg)](https://github.com/haya14busa/incsearch.vim/issues)
+[![](http://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![](http://img.shields.io/badge/doc-%3Ah%20incsearch.txt-red.svg)](doc/incsearch.txt)
 
-![](https://cloud.githubusercontent.com/assets/3797062/3866249/573444b2-1fc8-11e4-859a-7e5fb940c1bb.gif)
+![](https://raw.githubusercontent.com/haya14busa/i/master/incsearch.vim/incremental_regex_building.gif)
 
 Introduction
 ------------
@@ -62,7 +66,7 @@ map g/ <Plug>(incsearch-stay)
 
 #### Automatic :nohlsearch
 
-![](https://cloud.githubusercontent.com/assets/3797062/4518938/f3c11110-4ca6-11e4-88c6-708f510a0c3c.gif)
+![](https://raw.githubusercontent.com/haya14busa/i/master/incsearch.vim/incsearch_auto_nohlsearch.gif)
 
 Farewell, `nnoremap <Esc><Esc> :<C-u>nohlsearch<CR>`!
 This feature turns 'hlsearch' off automatically after searching-related motions.
@@ -98,6 +102,8 @@ let g:incsearch#magic = '\v'
 ### Smart backward word
 See `:h g:incsearch#smart_backward_word`
 
+![](https://raw.githubusercontent.com/haya14busa/i/master/incsearch.vim/incsearch_smart_backward_word.gif)
+
 ### Command Line Interface Keymappings
 incsearch.vim uses a custom command line interface, so it provides a custom
 keymapping interface(`IncSearchNoreMap`) like `cnoremap`. To use this command
@@ -129,7 +135,7 @@ Move the cursor to next/previous matches while incremental searching like Emacs.
 
 ### Scroll-like feature while incremental searching
 
-![](https://cloud.githubusercontent.com/assets/3797062/3931538/36979326-245a-11e4-9565-bd3d91e699d5.gif)
+![](https://raw.githubusercontent.com/haya14busa/i/master/incsearch.vim/incsearch_smart_backward_word.gif)
 
 | Mapping                      | description                                         |
 | ------------------------     | ---------------------------------                   |
@@ -155,32 +161,6 @@ Special thanks
 osyo-manga(https://github.com/osyo-manga), the author of
 the custom command line library, https://github.com/osyo-manga/vital-over,
 which incsearch.vim heavily depends on.
-
-License
--------
-
-MIT License
-
-```
-Copyright (c) 2014 haya14busa
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-of the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
-INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
-PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR
-THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-```
 
 Links
 -----
