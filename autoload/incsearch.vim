@@ -192,7 +192,7 @@ function! s:stay(cli, input) abort
     " Handle last-pattern
     if a:input isnot# ''
       call histadd('/', a:input)
-      let @/ = pattern
+      call s:set_search_reg(pattern, a:cli._base_key)
     endif
     call incsearch#autocmd#auto_nohlsearch(0)
   endif
@@ -254,7 +254,7 @@ function! s:set_search_related_stuff(cli, cmd, ...) abort
     let pattern = a:cli._convert(raw_pattern)
     let input = a:cli._combine_pattern(raw_pattern, offset)
     call histadd(a:cli._base_key, input)
-    let @/ = pattern
+    call s:set_search_reg(pattern, a:cli._base_key)
 
     let target_view = winsaveview()
     call winrestview(a:cli._w) " Get back start position temporarily for emulation
@@ -357,7 +357,7 @@ noremap! <silent>       <Plug>(_incsearch-searchforward) <Nop>
 nnoremap <silent><expr> <Plug>(_incsearch-searchforward) <SID>_searchforward_cmd()
 xnoremap <silent><expr> <Plug>(_incsearch-searchforward) <SID>_searchforward_cmd()
 function! s:_searchforward_cmd() abort
-  let d = (g:incsearch#consistent_n_direction ? s:DIRECTION.forward : v:searchforward)
+  let d = (g:incsearch#consistent_n_direction ? s:DIRECTION.forward : (incsearch#cli()._base_key is# '/' ? 1 : 0))
   return printf(":\<C-u>let v:searchforward=%d\<CR>", d)
 endfunction
 
@@ -487,6 +487,13 @@ endif
 function! incsearch#magic() abort
   let m = g:incsearch#magic
   return (len(m) == 2 && m =~# '\\[mMvV]' ? m : '')
+endfunction
+
+" s:set_search_reg() set pattern to @/ with ?\? handling
+" @command '/' or '?'
+function! s:set_search_reg(pattern, command) abort
+  let @/ = a:command is# '?'
+  \ ? substitute(a:pattern, '\\?', '?', 'g') : a:pattern
 endfunction
 
 "}}}
